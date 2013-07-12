@@ -1,5 +1,9 @@
 var issue;
 
+document.addEventListener("DOMContentLoaded", function () {
+	init();
+});
+
 //http://stackoverflow.com/questions/1787322/htmlspecialchars-equivalent-in-javascript
 function escapeHtml(unsafe) {
 	return unsafe
@@ -8,12 +12,6 @@ function escapeHtml(unsafe) {
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#039;");
-}
-
-function getIssueUrl() {
-	var baseurl = chrome.extension.getBackgroundPage().getRedmineUrl();
-	
-	return baseurl + 'issues/' + issue.id;
 }
 
 function getProjectUrl() {
@@ -97,7 +95,7 @@ function init() {
 	var tracker = document.getElementById('tracker');
 	var priority = document.getElementById('priority');
 
-	title.innerHTML = '<a href="' + getIssueUrl() + '" target="_blank">' + escapeHtml(shortenString(issue.subject, 25)) + '</a>';
+	title.innerHTML = '<a href="' + chrome.extension.getBackgroundPage().getRedmineIssueUrl(issue.id) + '" target="_blank">' + escapeHtml(shortenString(issue.subject, 25)) + '</a>';
 	desc.innerHTML = escapeHtml(shortenString(issue.description, 120));
 	author.innerHTML = 'by <a href="' + getAuthorUrl() + '" target="_blank">' + escapeHtml(issue.author.name) + '</a>';
 	

@@ -15,6 +15,12 @@ var currentUserName = null;
 var issuesIds = null;
 var newIssueStack = new Array(); //issues that just arrived
 
+//NOTIFICATION SUPPORT
+var webkitHtmlNotificationsSupported=false;
+var chromeNotificationsSupported=false;
+var notificationID = "";
+var notificationsTimeoutID = "";
+
 function init() {
 	issuesCount = -1;
 	issuesNewCount = -1;
@@ -35,6 +41,9 @@ function init() {
 	chrome.browserAction.setBadgeBackgroundColor({color:BADGE_COLOR_ACTIVE});
 	iconAnimation.startLoading();
 
+	webkitHtmlNotificationsSupported = ( typeof webkitNotifications.createHTMLNotification == 'function' );
+	chromeNotificationsSupported = ( typeof chrome.notifications != "undefined" );
+
 	startRequest();
 }
 
@@ -45,6 +54,11 @@ function getRedmineUrl() {
 
 	return settings.get('redmineUrl');
 }
+
+function getRedmineIssueUrl(issueID) {
+	return getRedmineUrl() + 'issues/' + issueID;
+}
+
 
 function getRedmineUpdateUrl() {
 	if( !settings.get('requestUrl') ) {
@@ -71,18 +85,24 @@ chrome.browserAction.onClicked.addListener(function(tab) {
 	goToRedmine();
 });
 
-function goToRedmine() {
+function goToRedmine(issueID) {
 	if(getRedmineUrl() == null) {
 		return;
 	}
 
 	chrome.tabs.getAllInWindow(undefined, function(tabs) {
-		var page = 'my/page';
-		if(settings.get('iconPressUrl')) {
-			page = settings.get('iconPressUrl');
-			if(page.length > 0 && page.indexOf('/') == 0) {
-				page = page.substring(1);
+		var url;
+		if (typeof issueID == "undefined"){
+			var page = 'my/page';
+			if(settings.get('iconPressUrl')) {
+				page = settings.get('iconPressUrl');
+				if(page.length > 0 && page.indexOf('/') == 0) {
+					page = page.substring(1);
+				}
 			}
+			url = getRedmineUrl()+page;
+		}else{
+			url = getRedmineIssueUrl(issueID);
 		}
 
 		for (var i = 0, tab; tab = tabs[i]; i++) {
@@ -90,7 +110,7 @@ function goToRedmine() {
 				var tabOptions = {selected: true};
 
 				if(!settings.get('iconPressDontRedirect')) {
-					tabOptions.url = getRedmineUrl() + page;
+					tabOptions.url = url;
 				}
 
 				chrome.tabs.update(tab.id, tabOptions);
@@ -98,7 +118,7 @@ function goToRedmine() {
 			}
 		}
 
-		chrome.tabs.create({url: getRedmineUrl() + page});
+		chrome.tabs.create({url: url});
 	});
 }
 
@@ -173,36 +193,66 @@ function showNotificationOnNewIssue(issuesObj) {
 
 		//check if issue is new (if id array exists)
 		if(issuesIds != null && (issuesIds.indexOf(issue.id) == -1)) {
-			
-			//issue.author.name
-			//issue.status.name
-			//issue.project.name
-			//issue.created_on
-			//issue.updated_on
-
-			if(!settings.get('notificationsType') || settings.get('notificationsType') == 'standard') {
-				var notification = webkitNotifications.createNotification(
-					'img/redmine_logo_128.png',  // icon url - can be relative
-					'"' + issue.subject + '" by ' + issue.author.name,  // notification title
-					issue.description  // notification body text
-				);
-			} else {//extended notification
-				var notification = webkitNotifications.createHTMLNotification(
-					'notification.html'
-				);
-
-				setNewIssue(issue);
-			}
-
-			notification.show();
-
-			window.setTimeout(function(notification){
-				notification.cancel();
-			}, settings.get('notificationsTimeout'), notification);
+			notify(issue);			
 		}
 	}
 
 	issuesIds = newIssuesIds;
+}
+
+function notify(issue){
+	//issue.author.name
+	//issue.status.name
+	//issue.project.name
+	//issue.created_on
+	//issue.updated_on
+
+	var notification; 	// for webkitNotifications
+
+	if(!settings.get('notificationsType') || settings.get('notificationsType') == 'standard' || !webkitHtmlNotificationsSupported) {
+		if( chromeNotificationsSupported){
+			chrome.notifications.create("", {
+				type : "list",
+				title: issue.tracker.name+" #"+issue.id+":"+issue.subject,
+				message: issue.description,
+				iconUrl : 'img/redmine_logo_128.png',
+				items : [
+					{ title : "Author", message : issue.author.name},
+					{ title : "Priority",message : issue.priority.name},
+					{ title : "Description",message : issue.description}
+				],
+				buttons : [
+					{ title : "Go to issue"}
+				]
+			}, function(nid){
+				// set up button handler
+				chrome.notifications.onButtonClicked.addListener(function(nid, buttonIndex) {
+					goToRedmine(issue.id);
+					chrome.notifications.clear( nid, function(){ console.log("cleared")});
+				});
+
+			});
+		}else{
+			notification = webkitNotifications.createNotification(
+				'img/redmine_logo_128.png',  // icon url - can be relative
+				'"' + issue.subject + '" by ' + issue.author.name,  // notification title
+				issue.description  // notification body text
+			);
+		}
+	} else {//extended notification
+		notification = webkitNotifications.createHTMLNotification(
+			'notification.html'
+		);
+		setNewIssue(issue);
+	}
+
+	if (typeof notification != "undefined"){
+		notification.show();
+		notificationTimeoutID = window.setTimeout(function(notification){
+			notification.cancel();
+			window.clearTimeout(notificationTimeoutID );
+		}, settings.get('notificationsTimeout'), notification);
+	}
 }
 
 function setNewIssue(issue) {
